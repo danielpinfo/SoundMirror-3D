@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TTS Tongue Visualizer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js'
+
+/* ----------------- BASIC SETUP ----------------- */
+
+const scene = new THREE.Scene()
+
+const camera = new THREE.PerspectiveCamera(
+  40,
+  window.innerWidth / window.innerHeight,
+  0.01,
+  10
+)
+camera.position.set(0, 0.08, 0.45)
+
+const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
+renderer.setSize(window.innerWidth, window.innerHeight)
+document.body.appendChild(renderer.domElement)
+
+/* ----------------- LIGHTING ----------------- */
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.8))
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 0.6)
+keyLight.position.set(0.2, 0.3, 0.5)
+scene.add(keyLight)
+
+/* ----------------- PROCEDURAL TONGUE ----------------- */
+
+// Tongue geometry (deformable strip)
+const segments = 40
+const geometry = new THREE.PlaneGeometry(0.18, 0.05, segments, 1)
+geometry.rotateX(-Math.PI / 2)
+
+const material = new THREE.MeshStandardMaterial({
+  color: 0xcc6666,
+  roughness: 0.45,
+  metalness: 0.05,
+  side: THREE.DoubleSide
+})
+
+const tongue = new THREE.Mesh(geometry, material)
+tongue.position.y = -0.02
+scene.add(tongue)
+
+// Save original vertex positions
+const basePositions = geometry.attributes.position.array.slice()
+
+/* ----------------- AUDIO ----------------- */
+
+const params = new URLSearchParams(window.location.search)
+const audioUrl = params.get('audio')
+
+if (!audioUrl) {
+  console.warn('No ?audio= URL provided')
+}
+
+const audio = new Audio(audioUrl)
+audio.crossOrigin = 'anonymous'
+audio.loop = false
+audio.play()
+
+const ctx = new AudioContext()
+const source = ctx.createMediaElementSource(audio)
+const analyser = ctx.createAnalyser()
+analyser.fftSize = 2048
+
+source.connect(analyser)
+analyser.connect(ctx.destination)
+
+const freq = new Float32Array(analyser.frequencyBinCount)
+
+/* ----------------- HELPERS ----------------- */
+
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
+const map = (v, inA, inB, outA, outB) =>
+  outA + (outB - outA) * ((v - inA) / (inB - inA))
+
+function bandEnergy(startHz, endHz) {
+  const nyquist = ctx.sampleRate / 2
+  const start = Math.floor(startHz / nyquist * freq.length)
+  const end = Math.floor(endHz / nyquist * freq.length)
+  let sum = 0
+  for (let i = start; i < end; i++) sum += freq[i]
+  return sum / (end - start)
+}
+
+/* ----------------- ANIMATION ----------------- */
+
+function animate() {
+  analyser.getFloatFrequencyData(freq)
+
+  // Neural-TTS-optimized bands
+  const jaw = bandEnergy(80, 300)       // openness
+  const body = bandEnergy(500, 1500)    // tongue body
+  const tip = bandEnergy(2000, 3500)    // tongue tip / groove
+
+  const jawOpen = clamp(map(jaw, -70, -25, 0.0, 1.0), 0, 1)
+  const bodyLift = clamp(map(body, -80, -30, 0.0, 1.0), 0, 1)
+  const tipLift = clamp(map(tip, -85, -35, 0.0, 1.0), 0, 1)
+
+  const pos = geometry.attributes.position.array
+
+  for (let i = 0; i < pos.length; i += 3) {
+    const x = basePositions[i]
+    const z = basePositions[i + 2]
+
+    const t = (x + 0.09) / 0.18 // 0 = back, 1 = tip
+
+    const lift =
+      bodyLift * Math.sin(t * Math.PI) * 0.025 +
+      tipLift * Math.pow(t, 3) * 0.02
+
+    pos[i + 1] =
+      basePositions[i + 1] +
+      lift -
+      jawOpen * 0.015
+  }
+
+  geometry.attributes.position.needsUpdate = true
+
+  renderer.render(scene, camera)
+  requestAnimationFrame(animate)
+}
+
+animate()
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(window.innerWidth, window.innerHeight)
+})
+</script>
+
+</body>
+</html>
