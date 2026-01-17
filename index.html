@@ -79,25 +79,24 @@ document.body.appendChild(audio)
 
 // Unlock audio on first user interaction
 window.addEventListener('click', async () => {
-  if (ctx.state === 'suspended') {
-    await ctx.resume()
-  }
-  if (audio.paused) {
-    audio.play()
-  }
+  const ctx = new AudioContext()
+
+  const source = ctx.createMediaElementSource(audio)
+  const analyser = ctx.createAnalyser()
+  analyser.fftSize = 2048
+
+  source.connect(analyser)
+  analyser.connect(ctx.destination)
+
+  audio.play()
+
+  // expose analyser for animation loop
+  window._analyser = analyser
 }, { once: true })
 
 if (!audioUrl) {
   console.warn('No ?audio= URL provided')
 }
-
-const ctx = new AudioContext()
-const source = ctx.createMediaElementSource(audio)
-const analyser = ctx.createAnalyser()
-analyser.fftSize = 2048
-
-source.connect(analyser)
-analyser.connect(ctx.destination)
 
 const freq = new Float32Array(analyser.frequencyBinCount)
 
