@@ -28,7 +28,8 @@
   ▶ Play
 </button>
 
-<script type="module">
+
+  <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js'
 
 /* ----------------- BASIC SETUP ----------------- */
@@ -175,8 +176,6 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix()
   renderer.setSize(window.innerWidth, window.innerHeight)
 })
-</script>
-
 const playBtn = document.getElementById('playBtn')
 
 playBtn.addEventListener('click', async () => {
@@ -224,5 +223,8 @@ playBtn.addEventListener('click', async () => {
 
   animateWithAudio()
 })
+
+  </script>
+
 </body>
 </html>
