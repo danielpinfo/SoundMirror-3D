@@ -70,6 +70,22 @@ const basePositions = geometry.attributes.position.array.slice()
 
 const params = new URLSearchParams(window.location.search)
 const audioUrl = params.get('audio')
+// --- Create audio element (required for browser autoplay rules)
+const audio = document.createElement('audio')
+audio.src = audioUrl || ''
+audio.crossOrigin = 'anonymous'
+audio.loop = false
+document.body.appendChild(audio)
+
+// Unlock audio on first user interaction
+window.addEventListener('click', async () => {
+  if (ctx.state === 'suspended') {
+    await ctx.resume()
+  }
+  if (audio.paused) {
+    audio.play()
+  }
+}, { once: true })
 
 if (!audioUrl) {
   console.warn('No ?audio= URL provided')
