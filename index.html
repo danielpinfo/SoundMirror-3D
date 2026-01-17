@@ -73,6 +73,7 @@ const material = new THREE.MeshStandardMaterial({
 const tongue = new THREE.Mesh(geometry, material)
 tongue.position.y = -0.02
 scene.add(tongue)
+renderer.render(scene, camera)
 
 // Save original vertex positions
 const basePositions = geometry.attributes.position.array.slice()
