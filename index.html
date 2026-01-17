@@ -91,11 +91,6 @@ if (!audioUrl) {
   console.warn('No ?audio= URL provided')
 }
 
-const audio = new Audio(audioUrl)
-audio.crossOrigin = 'anonymous'
-audio.loop = false
-audio.play()
-
 const ctx = new AudioContext()
 const source = ctx.createMediaElementSource(audio)
 const analyser = ctx.createAnalyser()
