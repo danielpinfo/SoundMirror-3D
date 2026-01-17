@@ -17,6 +17,16 @@
   </style>
 </head>
 <body>
+<button id="playBtn" style="
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  padding: 10px 16px;
+  font-size: 14px;
+">
+  ▶ Play
+</button>
 
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js'
@@ -158,7 +168,7 @@ window._analyser.getFloatFrequencyData(freq)
   requestAnimationFrame(animate)
 }
 
-animate()
+renderer.render(scene, camera)
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight
@@ -167,5 +177,52 @@ window.addEventListener('resize', () => {
 })
 </script>
 
+const playBtn = document.getElementById('playBtn')
+
+playBtn.addEventListener('click', async () => {
+  playBtn.remove()
+
+  const ctx = new AudioContext()
+  const source = ctx.createMediaElementSource(audio)
+  const analyser = ctx.createAnalyser()
+  analyser.fftSize = 2048
+
+  source.connect(analyser)
+  analyser.connect(ctx.destination)
+
+  audio.play()
+
+  function animateWithAudio() {
+    analyser.getFloatFrequencyData(freq)
+
+    const jaw = bandEnergy(80, 300)
+    const body = bandEnergy(500, 1500)
+    const tip = bandEnergy(2000, 3500)
+
+    const jawOpen = clamp(map(jaw, -70, -25, 0, 1), 0, 1)
+    const bodyLift = clamp(map(body, -80, -30, 0, 1), 0, 1)
+    const tipLift = clamp(map(tip, -85, -35, 0, 1), 0, 1)
+
+    const pos = geometry.attributes.position.array
+
+    for (let i = 0; i < pos.length; i += 3) {
+      const x = basePositions[i]
+      const t = (x + 0.09) / 0.18
+
+      const lift =
+        bodyLift * Math.sin(t * Math.PI) * 0.025 +
+        tipLift * Math.pow(t, 3) * 0.02
+
+      pos[i + 1] =
+        basePositions[i + 1] + lift - jawOpen * 0.015
+    }
+
+    geometry.attributes.position.needsUpdate = true
+    renderer.render(scene, camera)
+    requestAnimationFrame(animateWithAudio)
+  }
+
+  animateWithAudio()
+})
 </body>
 </html>
