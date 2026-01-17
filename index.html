@@ -8,31 +8,32 @@
     html, body {
       margin: 0;
       padding: 0;
-      background: transparent;
+      background: white;
       overflow: hidden;
+      font-family: system-ui, sans-serif;
     }
     canvas {
       display: block;
     }
+    #playBtn {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 10;
+      padding: 10px 16px;
+      font-size: 14px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
-<button id="playBtn" style="
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 10;
-  padding: 10px 16px;
-  font-size: 14px;
-">
-  ▶ Play
-</button>
 
+<button id="playBtn">▶ Play</button>
 
-  <script type="module">
+<script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js'
 
-/* ----------------- BASIC SETUP ----------------- */
+/* -------------------- SCENE -------------------- */
 
 const scene = new THREE.Scene()
 
@@ -44,21 +45,20 @@ const camera = new THREE.PerspectiveCamera(
 )
 camera.position.set(0, 0.08, 0.45)
 
-const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
+const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 
-/* ----------------- LIGHTING ----------------- */
+/* -------------------- LIGHTS -------------------- */
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.8))
 
-const keyLight = new THREE.DirectionalLight(0xffffff, 0.6)
-keyLight.position.set(0.2, 0.3, 0.5)
-scene.add(keyLight)
+const light = new THREE.DirectionalLight(0xffffff, 0.6)
+light.position.set(0.3, 0.4, 0.5)
+scene.add(light)
 
-/* ----------------- PROCEDURAL TONGUE ----------------- */
+/* -------------------- TONGUE -------------------- */
 
-// Tongue geometry (deformable strip)
 const segments = 40
 const geometry = new THREE.PlaneGeometry(0.18, 0.05, segments, 1)
 geometry.rotateX(-Math.PI / 2)
@@ -73,53 +73,33 @@ const material = new THREE.MeshStandardMaterial({
 const tongue = new THREE.Mesh(geometry, material)
 tongue.position.y = -0.02
 scene.add(tongue)
-renderer.render(scene, camera)
 
-// Save original vertex positions
+// Save rest pose
 const basePositions = geometry.attributes.position.array.slice()
 
-/* ----------------- AUDIO ----------------- */
+// Initial render so tongue is visible
+renderer.render(scene, camera)
+
+/* -------------------- AUDIO -------------------- */
 
 const params = new URLSearchParams(window.location.search)
-const audioUrl = params.get('audio')
-// --- Create audio element (required for browser autoplay rules)
-const audio = document.createElement('audio')
-audio.src = audioUrl || ''
-audio.crossOrigin = 'anonymous'
-audio.loop = false
-document.body.appendChild(audio)
+const audioPath = params.get('audio')
 
-// Unlock audio on first user interaction
-window.addEventListener('click', async () => {
-  const ctx = new AudioContext()
+const audio = new Audio()
+audio.src = audioPath || ''
+audio.preload = 'auto'
 
-  const source = ctx.createMediaElementSource(audio)
-  const analyser = ctx.createAnalyser()
-  analyser.fftSize = 2048
+let analyser = null
+let freqData = null
 
-  source.connect(analyser)
-  analyser.connect(ctx.destination)
-
-  audio.play()
-
-  // expose analyser for animation loop
-  window._analyser = analyser
-}, { once: true })
-
-if (!audioUrl) {
-  console.warn('No ?audio= URL provided')
-}
-
-const freq = new Float32Array(analyser.frequencyBinCount)
-
-/* ----------------- HELPERS ----------------- */
+/* -------------------- HELPERS -------------------- */
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
 const map = (v, inA, inB, outA, outB) =>
   outA + (outB - outA) * ((v - inA) / (inB - inA))
 
-function bandEnergy(startHz, endHz) {
-  const nyquist = ctx.sampleRate / 2
+function bandEnergy(freq, startHz, endHz, sampleRate) {
+  const nyquist = sampleRate / 2
   const start = Math.floor(startHz / nyquist * freq.length)
   const end = Math.floor(endHz / nyquist * freq.length)
   let sum = 0
@@ -127,56 +107,8 @@ function bandEnergy(startHz, endHz) {
   return sum / (end - start)
 }
 
-/* ----------------- ANIMATION ----------------- */
+/* -------------------- PLAY + ANIMATE -------------------- */
 
-function animate() {
-  if (!window._analyser) {
-  requestAnimationFrame(animate)
-  return
-}
-window._analyser.getFloatFrequencyData(freq)
-
-
-  // Neural-TTS-optimized bands
-  const jaw = bandEnergy(80, 300)       // openness
-  const body = bandEnergy(500, 1500)    // tongue body
-  const tip = bandEnergy(2000, 3500)    // tongue tip / groove
-
-  const jawOpen = clamp(map(jaw, -70, -25, 0.0, 1.0), 0, 1)
-  const bodyLift = clamp(map(body, -80, -30, 0.0, 1.0), 0, 1)
-  const tipLift = clamp(map(tip, -85, -35, 0.0, 1.0), 0, 1)
-
-  const pos = geometry.attributes.position.array
-
-  for (let i = 0; i < pos.length; i += 3) {
-    const x = basePositions[i]
-    const z = basePositions[i + 2]
-
-    const t = (x + 0.09) / 0.18 // 0 = back, 1 = tip
-
-    const lift =
-      bodyLift * Math.sin(t * Math.PI) * 0.025 +
-      tipLift * Math.pow(t, 3) * 0.02
-
-    pos[i + 1] =
-      basePositions[i + 1] +
-      lift -
-      jawOpen * 0.015
-  }
-
-  geometry.attributes.position.needsUpdate = true
-
-  renderer.render(scene, camera)
-  requestAnimationFrame(animate)
-}
-
-renderer.render(scene, camera)
-
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight
-  camera.updateProjectionMatrix()
-  renderer.setSize(window.innerWidth, window.innerHeight)
-})
 const playBtn = document.getElementById('playBtn')
 
 playBtn.addEventListener('click', async () => {
@@ -184,48 +116,59 @@ playBtn.addEventListener('click', async () => {
 
   const ctx = new AudioContext()
   const source = ctx.createMediaElementSource(audio)
-  const analyser = ctx.createAnalyser()
+
+  analyser = ctx.createAnalyser()
   analyser.fftSize = 2048
+
+  freqData = new Float32Array(analyser.frequencyBinCount)
 
   source.connect(analyser)
   analyser.connect(ctx.destination)
 
-  audio.play()
+  await audio.play()
 
-  function animateWithAudio() {
-    analyser.getFloatFrequencyData(freq)
-
-    const jaw = bandEnergy(80, 300)
-    const body = bandEnergy(500, 1500)
-    const tip = bandEnergy(2000, 3500)
-
-    const jawOpen = clamp(map(jaw, -70, -25, 0, 1), 0, 1)
-    const bodyLift = clamp(map(body, -80, -30, 0, 1), 0, 1)
-    const tipLift = clamp(map(tip, -85, -35, 0, 1), 0, 1)
-
-    const pos = geometry.attributes.position.array
-
-    for (let i = 0; i < pos.length; i += 3) {
-      const x = basePositions[i]
-      const t = (x + 0.09) / 0.18
-
-      const lift =
-        bodyLift * Math.sin(t * Math.PI) * 0.025 +
-        tipLift * Math.pow(t, 3) * 0.02
-
-      pos[i + 1] =
-        basePositions[i + 1] + lift - jawOpen * 0.015
-    }
-
-    geometry.attributes.position.needsUpdate = true
-    renderer.render(scene, camera)
-    requestAnimationFrame(animateWithAudio)
-  }
-
-  animateWithAudio()
+  animate()
 })
 
-  </script>
+function animate() {
+  analyser.getFloatFrequencyData(freqData)
+
+  const jaw  = bandEnergy(freqData, 80, 300, analyser.context.sampleRate)
+  const body = bandEnergy(freqData, 500, 1500, analyser.context.sampleRate)
+  const tip  = bandEnergy(freqData, 2000, 3500, analyser.context.sampleRate)
+
+  const jawOpen  = clamp(map(jaw,  -70, -25, 0, 1), 0, 1)
+  const bodyLift = clamp(map(body, -80, -30, 0, 1), 0, 1)
+  const tipLift  = clamp(map(tip,  -85, -35, 0, 1), 0, 1)
+
+  const pos = geometry.attributes.position.array
+
+  for (let i = 0; i < pos.length; i += 3) {
+    const x = basePositions[i]
+    const t = (x + 0.09) / 0.18
+
+    const lift =
+      bodyLift * Math.sin(t * Math.PI) * 0.025 +
+      tipLift * Math.pow(t, 3) * 0.02
+
+    pos[i + 1] =
+      basePositions[i + 1] + lift - jawOpen * 0.015
+  }
+
+  geometry.attributes.position.needsUpdate = true
+  renderer.render(scene, camera)
+
+  requestAnimationFrame(animate)
+}
+
+/* -------------------- RESIZE -------------------- */
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(window.innerWidth, window.innerHeight)
+})
+</script>
 
 </body>
 </html>
