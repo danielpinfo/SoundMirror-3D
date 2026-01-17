@@ -118,7 +118,12 @@ function bandEnergy(startHz, endHz) {
 /* ----------------- ANIMATION ----------------- */
 
 function animate() {
-  analyser.getFloatFrequencyData(freq)
+  if (!window._analyser) {
+  requestAnimationFrame(animate)
+  return
+}
+window._analyser.getFloatFrequencyData(freq)
+
 
   // Neural-TTS-optimized bands
   const jaw = bandEnergy(80, 300)       // openness
